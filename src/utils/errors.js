@@ -19,9 +19,21 @@ class RegraDeNegocioError extends AppError {
   }
 }
 
+class ValidacaoError extends AppError {
+  constructor(
+    message = 'Erro de validação dos dados de entrada.',
+    problemas = [],
+  ) {
+    super(message, 400);
+    this.problemas = problemas;
+    this.detalhes = problemas;
+    this.issues = problemas;
+  }
+}
+
 module.exports = {
   AppError,
   NaoEncontradoError,
   RegraDeNegocioError,
+  ValidacaoError,
 };
-
