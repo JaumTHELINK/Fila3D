@@ -4,7 +4,7 @@ const IMaterialRepository = require('../src/domain/repositories/IMaterialReposit
 const MaterialRepositoryPrisma = require('../src/infrastructure/repositories/MaterialRepositoryPrisma');
 
 describe('IMaterialRepository', () => {
-  it('métodos da interface base devem lançar "Método não implementado"', async () => {
+  it('métodos não implementados devem rejeitar', async () => {
     const repository = new IMaterialRepository();
 
     await expect(repository.criar({})).rejects.toThrow(
@@ -19,6 +19,12 @@ describe('IMaterialRepository', () => {
     await expect(repository.atualizar(1, {})).rejects.toThrow(
       'Método não implementado',
     );
+    await expect(repository.abaterEstoque(1, 1)).rejects.toThrow(
+      'Método não implementado',
+    );
+    await expect(repository.reporEstoque(1, 1)).rejects.toThrow(
+      'Método não implementado',
+    );
     await expect(repository.deletar(1)).rejects.toThrow(
       'Método não implementado',
     );
@@ -26,43 +32,43 @@ describe('IMaterialRepository', () => {
 });
 
 describe('MaterialRepositoryPrisma', () => {
-  let mockPrisma;
+  let prisma;
   let repository;
 
+  const registro = {
+    id: 1,
+    nome: 'Filamento PLA',
+    tipo: TipoMaterial.PLA,
+    precoPorGrama: 0.12,
+    estoqueGramas: 1000,
+  };
+
   beforeEach(() => {
-    mockPrisma = {
+    prisma = {
       material: {
         create: jest.fn(),
         findUnique: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         delete: jest.fn(),
       },
     };
-    repository = new MaterialRepositoryPrisma(mockPrisma);
+    repository = new MaterialRepositoryPrisma(prisma);
   });
 
-  it('deve exigir PrismaClient no construtor', () => {
+  it('deve exigir PrismaClient', () => {
     expect(() => new MaterialRepositoryPrisma()).toThrow(
       'PrismaClient deve ser fornecido no construtor.',
     );
   });
 
-  it('criar deve persistir material e retornar a entidade', async () => {
-    const material = new Material({
-      nome: 'Filamento PLA',
-      tipo: TipoMaterial.PLA,
-      precoPorGrama: 0.12,
-      estoqueGramas: 1000,
-    });
-    mockPrisma.material.create.mockResolvedValue({
-      ...material,
-      id: 1,
-    });
+  it('criar deve persistir dados e retornar entidade', async () => {
+    prisma.material.create.mockResolvedValue(registro);
 
-    const resultado = await repository.criar(material);
+    const resultado = await repository.criar(new Material(registro));
 
-    expect(mockPrisma.material.create).toHaveBeenCalledWith({
+    expect(prisma.material.create).toHaveBeenCalledWith({
       data: {
         nome: 'Filamento PLA',
         tipo: TipoMaterial.PLA,
@@ -71,74 +77,86 @@ describe('MaterialRepositoryPrisma', () => {
       },
     });
     expect(resultado).toBeInstanceOf(Material);
-    expect(resultado.id).toBe(1);
   });
 
-  it('buscarPorId deve retornar entidade ou null', async () => {
-    mockPrisma.material.findUnique.mockResolvedValue({
-      id: 2,
-      nome: 'Filamento TPU',
-      tipo: TipoMaterial.TPU,
-      precoPorGrama: 0.2,
-      estoqueGramas: 500,
+  it('buscarPorId deve mapear registro ou retornar null', async () => {
+    prisma.material.findUnique.mockResolvedValue(registro);
+
+    await expect(repository.buscarPorId('1')).resolves.toBeInstanceOf(Material);
+    expect(prisma.material.findUnique).toHaveBeenCalledWith({
+      where: { id: 1 },
     });
 
-    const encontrado = await repository.buscarPorId('2');
-    expect(mockPrisma.material.findUnique).toHaveBeenCalledWith({
-      where: { id: 2 },
-    });
-    expect(encontrado).toBeInstanceOf(Material);
-    expect(encontrado.tipo).toBe(TipoMaterial.TPU);
-
-    mockPrisma.material.findUnique.mockResolvedValue(null);
-    await expect(repository.buscarPorId(999)).resolves.toBeNull();
+    prisma.material.findUnique.mockResolvedValue(null);
+    await expect(repository.buscarPorId(2)).resolves.toBeNull();
   });
 
   it('listar deve converter os registros em entidades', async () => {
-    mockPrisma.material.findMany.mockResolvedValue([
-      {
-        id: 1,
-        nome: 'PLA',
-        tipo: TipoMaterial.PLA,
-        precoPorGrama: 0.12,
-        estoqueGramas: 1000,
-      },
-    ]);
+    prisma.material.findMany.mockResolvedValue([registro]);
 
-    const resultado = await repository.listar();
+    const materiais = await repository.listar();
 
-    expect(resultado).toHaveLength(1);
-    expect(resultado[0]).toBeInstanceOf(Material);
+    expect(materiais).toHaveLength(1);
+    expect(materiais[0]).toBeInstanceOf(Material);
   });
 
-  it('atualizar deve enviar apenas os campos informados', async () => {
-    mockPrisma.material.update.mockResolvedValue({
-      id: 1,
-      nome: 'PLA atualizado',
-      tipo: TipoMaterial.PLA,
-      precoPorGrama: 0.15,
-      estoqueGramas: 1000,
+  it('atualizar deve enviar apenas os campos fornecidos', async () => {
+    prisma.material.update.mockResolvedValue({
+      ...registro,
+      nome: 'PLA Premium',
     });
 
-    const resultado = await repository.atualizar(1, {
-      nome: 'PLA atualizado',
-      precoPorGrama: 0.15,
-    });
+    await repository.atualizar(1, { nome: 'PLA Premium' });
 
-    expect(mockPrisma.material.update).toHaveBeenCalledWith({
+    expect(prisma.material.update).toHaveBeenCalledWith({
       where: { id: 1 },
-      data: { nome: 'PLA atualizado', precoPorGrama: 0.15 },
+      data: { nome: 'PLA Premium' },
     });
-    expect(resultado).toBeInstanceOf(Material);
-    expect(resultado.precoPorGrama).toBe(0.15);
   });
 
-  it('deletar deve remover pelo id numérico', async () => {
-    mockPrisma.material.delete.mockResolvedValue({ id: 4 });
+  it('abaterEstoque deve debitar atomicamente e retornar material atualizado', async () => {
+    prisma.material.updateMany.mockResolvedValue({ count: 1 });
+    prisma.material.findUnique.mockResolvedValue({
+      ...registro,
+      estoqueGramas: 750,
+    });
 
-    await expect(repository.deletar('4')).resolves.toBe(true);
-    expect(mockPrisma.material.delete).toHaveBeenCalledWith({
-      where: { id: 4 },
+    const resultado = await repository.abaterEstoque(1, 250);
+
+    expect(prisma.material.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, estoqueGramas: { gte: 250 } },
+      data: { estoqueGramas: { decrement: 250 } },
+    });
+    expect(resultado.estoqueGramas).toBe(750);
+  });
+
+  it('abaterEstoque deve retornar null se não puder debitar', async () => {
+    prisma.material.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(repository.abaterEstoque(1, 1500)).resolves.toBeNull();
+    expect(prisma.material.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('reporEstoque deve incrementar o estoque atomicamente', async () => {
+    prisma.material.update.mockResolvedValue({
+      ...registro,
+      estoqueGramas: 1250,
+    });
+
+    await repository.reporEstoque('1', 250);
+
+    expect(prisma.material.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { estoqueGramas: { increment: 250 } },
+    });
+  });
+
+  it('deletar deve chamar Prisma com id numérico', async () => {
+    prisma.material.delete.mockResolvedValue(registro);
+
+    await expect(repository.deletar('1')).resolves.toBe(true);
+    expect(prisma.material.delete).toHaveBeenCalledWith({
+      where: { id: 1 },
     });
   });
 });

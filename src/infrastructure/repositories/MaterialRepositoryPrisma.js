@@ -55,6 +55,32 @@ class MaterialRepositoryPrisma extends IMaterialRepository {
     return this._paraEntidade(registro);
   }
 
+  async abaterEstoque(id, gramas) {
+    const resultado = await this.prisma.material.updateMany({
+      where: {
+        id: Number(id),
+        estoqueGramas: { gte: gramas },
+      },
+      data: {
+        estoqueGramas: { decrement: gramas },
+      },
+    });
+
+    if (resultado.count === 0) return null;
+    return this.buscarPorId(id);
+  }
+
+  async reporEstoque(id, gramas) {
+    const registro = await this.prisma.material.update({
+      where: { id: Number(id) },
+      data: {
+        estoqueGramas: { increment: gramas },
+      },
+    });
+
+    return this._paraEntidade(registro);
+  }
+
   async deletar(id) {
     await this.prisma.material.delete({
       where: { id: Number(id) },

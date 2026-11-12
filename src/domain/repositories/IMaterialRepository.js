@@ -16,6 +16,14 @@ class IMaterialRepository {
     throw new Error('Método não implementado');
   }
 
+  async abaterEstoque(id, gramas) {
+    throw new Error('Método não implementado');
+  }
+
+  async reporEstoque(id, gramas) {
+    throw new Error('Método não implementado');
+  }
+
   async deletar(id) {
     throw new Error('Método não implementado');
   }
