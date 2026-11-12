@@ -4,6 +4,7 @@ const cors = require('cors');
 
 const routes = require('./routes');
 const clienteRoutes = require('./interfaces/routes/clienteRoutes');
+const materialRoutes = require('./interfaces/routes/materialRoutes');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
 
@@ -17,6 +18,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/clientes', clienteRoutes);
+app.use('/materiais', materialRoutes);
 app.use('/api', routes);
 
 app.use(notFound);
