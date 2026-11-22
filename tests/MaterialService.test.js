@@ -85,7 +85,6 @@ describe('MaterialService', () => {
       nome: 'PLA Premium',
       tipo: TipoMaterial.PLA,
       precoPorGrama: 0.12,
-      estoqueGramas: 1000,
     });
     expect(resultado.nome).toBe('PLA Premium');
   });
@@ -96,6 +95,14 @@ describe('MaterialService', () => {
     await expect(
       service.atualizar(1, { precoPorGrama: 0 }),
     ).rejects.toBeInstanceOf(RegraDeNegocioError);
+    expect(repository.atualizar).not.toHaveBeenCalled();
+  });
+
+  it('atualizar deve exigir operações específicas para alterar estoque', async () => {
+    await expect(service.atualizar(1, { estoqueGramas: 500 })).rejects.toThrow(
+      'O estoque deve ser alterado pelas operações de abater ou repor.',
+    );
+    expect(repository.buscarPorId).not.toHaveBeenCalled();
     expect(repository.atualizar).not.toHaveBeenCalled();
   });
 

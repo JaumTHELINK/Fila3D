@@ -35,7 +35,12 @@ const atualizarMaterialSchema = z
       .optional(),
     tipo: tipoMaterialSchema.optional(),
     precoPorGrama: precoPorGramaSchema.optional(),
-    estoqueGramas: estoqueGramasSchema.optional(),
+    estoqueGramas: z
+      .never({
+        message:
+          'O estoque deve ser alterado pelas operações de abater ou repor.',
+      })
+      .optional(),
   })
   .refine((dados) => Object.keys(dados).length > 0, {
     message: 'Pelo menos um campo deve ser informado para atualização.',
