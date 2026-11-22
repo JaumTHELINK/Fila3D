@@ -30,20 +30,25 @@ class MaterialService {
   }
 
   async atualizar(id, dados) {
+    if (Object.hasOwn(dados, 'estoqueGramas')) {
+      throw new RegraDeNegocioError(
+        'O estoque deve ser alterado pelas operações de abater ou repor.',
+      );
+    }
+
     const materialExistente = await this.buscarPorId(id);
     const materialAtualizado = this._criarEntidade({
       id: materialExistente.id,
       nome: dados.nome ?? materialExistente.nome,
       tipo: dados.tipo ?? materialExistente.tipo,
       precoPorGrama: dados.precoPorGrama ?? materialExistente.precoPorGrama,
-      estoqueGramas: dados.estoqueGramas ?? materialExistente.estoqueGramas,
+      estoqueGramas: materialExistente.estoqueGramas,
     });
 
     return this.materialRepository.atualizar(id, {
       nome: materialAtualizado.nome,
       tipo: materialAtualizado.tipo,
       precoPorGrama: materialAtualizado.precoPorGrama,
-      estoqueGramas: materialAtualizado.estoqueGramas,
     });
   }
 

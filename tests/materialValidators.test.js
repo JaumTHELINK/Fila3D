@@ -45,6 +45,17 @@ describe('Schemas de Material', () => {
     expect(atualizarMaterialSchema.safeParse({}).success).toBe(false);
   });
 
+  it('deve rejeitar alteração de estoque pela atualização geral', () => {
+    const resultado = atualizarMaterialSchema.safeParse({
+      estoqueGramas: 500,
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error.issues[0].message).toBe(
+      'O estoque deve ser alterado pelas operações de abater ou repor.',
+    );
+  });
+
   it('deve exigir quantidade positiva para movimentação de estoque', () => {
     expect(movimentarEstoqueSchema.safeParse({ gramas: 50 }).success).toBe(
       true,
