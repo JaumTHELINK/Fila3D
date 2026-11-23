@@ -1,3 +1,8 @@
+// Padrão Repository (implementação com Prisma).
+// GRASP: Pure Fabrication (classe técnica que concentra o acesso a dados),
+// Low Coupling (recebe o PrismaClient por injeção, vindo do Singleton
+// DatabaseConnection) e Information Expert (só ela sabe converter registro
+// do banco em entidade Cliente).
 const IClienteRepository = require('../../domain/repositories/IClienteRepository');
 const Cliente = require('../../domain/entities/Cliente');
 
@@ -86,4 +91,3 @@ class ClienteRepositoryPrisma extends IClienteRepository {
 }
 
 module.exports = ClienteRepositoryPrisma;
-
