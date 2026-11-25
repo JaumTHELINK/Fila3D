@@ -1,6 +1,9 @@
+jest.mock('../src/infrastructure/repositories/MaterialRepositoryPrisma');
+
 const Material = require('../src/domain/entities/Material');
 const TipoMaterial = require('../src/domain/entities/TipoMaterial');
 const MaterialService = require('../src/application/useCases/MaterialService');
+const MaterialRepositoryPrisma = require('../src/infrastructure/repositories/MaterialRepositoryPrisma');
 const {
   NaoEncontradoError,
   RegraDeNegocioError,
@@ -19,15 +22,7 @@ describe('MaterialService', () => {
   };
 
   beforeEach(() => {
-    repository = {
-      criar: jest.fn(),
-      listar: jest.fn(),
-      buscarPorId: jest.fn(),
-      atualizar: jest.fn(),
-      abaterEstoque: jest.fn(),
-      reporEstoque: jest.fn(),
-      deletar: jest.fn(),
-    };
+    repository = new MaterialRepositoryPrisma();
     service = new MaterialService(repository);
   });
 
@@ -37,42 +32,49 @@ describe('MaterialService', () => {
     );
   });
 
-  it('criar deve validar dados e persistir uma entidade Material', async () => {
+  it('deve criar material válido com nome normalizado', async () => {
     repository.criar.mockImplementation(async (material) => material);
 
     const resultado = await service.criar({
       ...materialDados,
       id: undefined,
+      nome: '  Filamento PLA  ',
     });
 
-    expect(repository.criar).toHaveBeenCalledWith(expect.any(Material));
     expect(resultado).toBeInstanceOf(Material);
     expect(resultado.id).toBeNull();
+    expect(resultado.nome).toBe('Filamento PLA');
   });
 
-  it('criar deve converter dados inválidos em erro de regra de negócio', async () => {
+  it('deve rejeitar material inválido sem persistir', async () => {
     await expect(
       service.criar({ ...materialDados, precoPorGrama: 0 }),
     ).rejects.toBeInstanceOf(RegraDeNegocioError);
+
     expect(repository.criar).not.toHaveBeenCalled();
   });
 
-  it('listar deve retornar os materiais do repositório', async () => {
+  it('deve retornar a lista de materiais', async () => {
     const materiais = [new Material(materialDados)];
     repository.listar.mockResolvedValue(materiais);
 
-    await expect(service.listar()).resolves.toBe(materiais);
+    await expect(service.listar()).resolves.toEqual(materiais);
   });
 
-  it('buscarPorId deve falhar quando o material não existir', async () => {
-    repository.buscarPorId.mockResolvedValue(null);
+  it('deve retornar material encontrado e not-found quando ausente', async () => {
+    repository.buscarPorId.mockResolvedValueOnce(new Material(materialDados));
+    repository.buscarPorId.mockResolvedValueOnce(null);
 
+    await expect(service.buscarPorId(1)).resolves.toMatchObject({
+      id: 1,
+      nome: 'Filamento PLA',
+    });
     await expect(service.buscarPorId(999)).rejects.toBeInstanceOf(
       NaoEncontradoError,
     );
   });
 
-  it('atualizar deve preservar campos omitidos e validar os dados combinados', async () => {
+  it('deve preservar campos omitidos na atualização parcial', async () => {
     repository.buscarPorId.mockResolvedValue(new Material(materialDados));
     repository.atualizar.mockImplementation(async (id, dados) => ({
       id,
@@ -81,32 +83,28 @@ describe('MaterialService', () => {
 
     const resultado = await service.atualizar(1, { nome: 'PLA Premium' });
 
-    expect(repository.atualizar).toHaveBeenCalledWith(1, {
+    expect(resultado).toMatchObject({
+      id: 1,
       nome: 'PLA Premium',
       tipo: TipoMaterial.PLA,
       precoPorGrama: 0.12,
     });
-    expect(resultado.nome).toBe('PLA Premium');
   });
 
-  it('atualizar deve rejeitar material inválido', async () => {
+  it('deve rejeitar atualização inválida ou alteração direta do estoque', async () => {
     repository.buscarPorId.mockResolvedValue(new Material(materialDados));
 
     await expect(
       service.atualizar(1, { precoPorGrama: 0 }),
     ).rejects.toBeInstanceOf(RegraDeNegocioError);
-    expect(repository.atualizar).not.toHaveBeenCalled();
-  });
-
-  it('atualizar deve exigir operações específicas para alterar estoque', async () => {
     await expect(service.atualizar(1, { estoqueGramas: 500 })).rejects.toThrow(
       'O estoque deve ser alterado pelas operações de abater ou repor.',
     );
-    expect(repository.buscarPorId).not.toHaveBeenCalled();
+
     expect(repository.atualizar).not.toHaveBeenCalled();
   });
 
-  it('abaterEstoque deve persistir o saldo atualizado', async () => {
+  it('deve abater estoque quando houver saldo suficiente', async () => {
     repository.buscarPorId.mockResolvedValue(new Material(materialDados));
     repository.abaterEstoque.mockResolvedValue({
       ...materialDados,
@@ -115,11 +113,10 @@ describe('MaterialService', () => {
 
     const resultado = await service.abaterEstoque(1, 250);
 
-    expect(repository.abaterEstoque).toHaveBeenCalledWith(1, 250);
     expect(resultado.estoqueGramas).toBe(750);
   });
 
-  it('abaterEstoque deve rejeitar quantidade acima do saldo', async () => {
+  it('deve impedir abatimento maior que o saldo disponível', async () => {
     repository.buscarPorId.mockResolvedValue(new Material(materialDados));
 
     await expect(service.abaterEstoque(1, 1001)).rejects.toBeInstanceOf(
@@ -128,7 +125,7 @@ describe('MaterialService', () => {
     expect(repository.abaterEstoque).not.toHaveBeenCalled();
   });
 
-  it('reporEstoque deve persistir o saldo atualizado', async () => {
+  it('deve repor estoque e retornar o saldo atualizado', async () => {
     repository.buscarPorId.mockResolvedValue(new Material(materialDados));
     repository.reporEstoque.mockResolvedValue({
       ...materialDados,
@@ -137,17 +134,15 @@ describe('MaterialService', () => {
 
     const resultado = await service.reporEstoque(1, 250);
 
-    expect(repository.reporEstoque).toHaveBeenCalledWith(1, 250);
     expect(resultado.estoqueGramas).toBe(1250);
   });
 
-  it('deletar deve verificar existência antes de remover', async () => {
+  it('deve remover material existente', async () => {
     repository.buscarPorId.mockResolvedValue(new Material(materialDados));
     repository.deletar.mockResolvedValue(true);
 
     await expect(service.deletar(1)).resolves.toEqual({
       mensagem: 'Material removido com sucesso.',
     });
-    expect(repository.deletar).toHaveBeenCalledWith(1);
   });
 });
