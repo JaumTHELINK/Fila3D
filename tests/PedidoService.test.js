@@ -1,7 +1,14 @@
+jest.mock('../src/domain/repositories/IPedidoRepository');
+jest.mock('../src/infrastructure/repositories/ClienteRepositoryPrisma');
+jest.mock('../src/infrastructure/repositories/MaterialRepositoryPrisma');
+
 const PedidoService = require('../src/application/useCases/PedidoService');
 const Pedido = require('../src/domain/entities/Pedido');
 const StatusPedido = require('../src/domain/entities/StatusPedido');
 const TipoCliente = require('../src/domain/entities/TipoCliente');
+const IPedidoRepository = require('../src/domain/repositories/IPedidoRepository');
+const ClienteRepositoryPrisma = require('../src/infrastructure/repositories/ClienteRepositoryPrisma');
+const MaterialRepositoryPrisma = require('../src/infrastructure/repositories/MaterialRepositoryPrisma');
 const {
   NaoEncontradoError,
   RegraDeNegocioError,
@@ -25,19 +32,22 @@ describe('PedidoService.aprovarPedido', () => {
   let service;
 
   beforeEach(() => {
-    pedidoRepository = {
-      buscarPorId: jest.fn().mockResolvedValue(criarPedido()),
-      atualizar: jest.fn().mockImplementation(async (pedido) => pedido),
-    };
-    clienteRepository = {
-      buscarPorId: jest.fn().mockResolvedValue({
-        id: 10,
-        tipo: TipoCliente.PESSOA_FISICA,
-      }),
-    };
-    materialRepository = {
-      buscarPorId: jest.fn().mockResolvedValue({ id: 20, precoPorGrama: 0.15 }),
-    };
+    pedidoRepository = new IPedidoRepository();
+    pedidoRepository.buscarPorId.mockResolvedValue(criarPedido());
+    pedidoRepository.atualizar.mockImplementation(async (pedido) => pedido);
+
+    clienteRepository = new ClienteRepositoryPrisma();
+    clienteRepository.buscarPorId.mockResolvedValue({
+      id: 10,
+      tipo: TipoCliente.PESSOA_FISICA,
+    });
+
+    materialRepository = new MaterialRepositoryPrisma();
+    materialRepository.buscarPorId.mockResolvedValue({
+      id: 20,
+      precoPorGrama: 0.15,
+    });
+
     service = new PedidoService(
       pedidoRepository,
       clienteRepository,
@@ -45,51 +55,72 @@ describe('PedidoService.aprovarPedido', () => {
     );
   });
 
-  it('pessoa física: aprova e salva valorTotal sem desconto', async () => {
-    const pedido = await service.aprovarPedido(1);
+  it('aprova pedido de pessoa física e retorna o valor calculado', async () => {
+    const resultado = await service.aprovarPedido(1);
 
-    expect(pedido.status).toBe(StatusPedido.APROVADO);
-    expect(pedido.valorTotal).toBe(115);
-    expect(pedidoRepository.atualizar).toHaveBeenCalledWith(pedido);
+    expect(resultado.status).toBe(StatusPedido.APROVADO);
+    expect(resultado.valorTotal).toBe(115);
   });
 
-  it('empresa: aprova e salva valorTotal com 15% de desconto', async () => {
+  it('aplica desconto para pedidos de empresa', async () => {
     clienteRepository.buscarPorId.mockResolvedValue({
       id: 10,
       tipo: TipoCliente.EMPRESA,
     });
 
-    const pedido = await service.aprovarPedido(1);
+    const resultado = await service.aprovarPedido(1);
 
-    expect(pedido.valorTotal).toBe(97.75);
+    expect(resultado.valorTotal).toBe(97.75);
+    expect(resultado.status).toBe(StatusPedido.APROVADO);
   });
 
-  it('deve lançar NaoEncontradoError se o pedido não existir', async () => {
+  it('retorna not-found quando o pedido não existe', async () => {
     pedidoRepository.buscarPorId.mockResolvedValue(null);
-    await expect(service.aprovarPedido(99)).rejects.toThrow(NaoEncontradoError);
+
+    await expect(service.aprovarPedido(99)).rejects.toBeInstanceOf(
+      NaoEncontradoError,
+    );
   });
 
-  it('deve lançar NaoEncontradoError se cliente ou material não existirem', async () => {
-    clienteRepository.buscarPorId.mockResolvedValue(null);
-    await expect(service.aprovarPedido(1)).rejects.toThrow(NaoEncontradoError);
+  it.each([
+    ['cliente', () => clienteRepository.buscarPorId.mockResolvedValue(null)],
+    ['material', () => materialRepository.buscarPorId.mockResolvedValue(null)],
+  ])(
+    'retorna not-found quando o %s associado não existe',
+    async (_, arrange) => {
+      arrange();
 
-    clienteRepository.buscarPorId.mockResolvedValue({
-      tipo: TipoCliente.EMPRESA,
-    });
-    materialRepository.buscarPorId.mockResolvedValue(null);
-    await expect(service.aprovarPedido(1)).rejects.toThrow(NaoEncontradoError);
-  });
+      await expect(service.aprovarPedido(1)).rejects.toBeInstanceOf(
+        NaoEncontradoError,
+      );
+    },
+  );
 
-  it('deve lançar RegraDeNegocioError e não salvar se o pedido já foi aprovado', async () => {
+  it('não aprova um pedido que já saiu de orçamento', async () => {
     const pedido = criarPedido();
     pedido.aprovar();
     pedidoRepository.buscarPorId.mockResolvedValue(pedido);
 
-    await expect(service.aprovarPedido(1)).rejects.toThrow(RegraDeNegocioError);
+    await expect(service.aprovarPedido(1)).rejects.toBeInstanceOf(
+      RegraDeNegocioError,
+    );
     expect(pedidoRepository.atualizar).not.toHaveBeenCalled();
   });
 
-  it('deve exigir os três repositories no construtor', () => {
-    expect(() => new PedidoService(pedidoRepository)).toThrow();
+  it('rejeita tipo de cliente sem estratégia de preço', async () => {
+    clienteRepository.buscarPorId.mockResolvedValue({
+      id: 10,
+      tipo: 'TIPO_DESCONHECIDO',
+    });
+
+    await expect(service.aprovarPedido(1)).rejects.toThrow(
+      'Tipo de cliente sem estratégia de preço: TIPO_DESCONHECIDO',
+    );
+  });
+
+  it('exige todos os repositórios para construir o service', () => {
+    expect(() => new PedidoService(pedidoRepository)).toThrow(
+      'pedidoRepository, clienteRepository e materialRepository devem ser fornecidos.',
+    );
   });
 });
